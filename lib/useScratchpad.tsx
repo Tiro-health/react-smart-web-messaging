@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSMARTWebMessagingContext } from "./SMARTWebMessagingContext";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { OperationOutcome } from "./outcome";
+import { Status } from "./SMARTWebMessagingConnector";
 export type Resource = Record<string, unknown> & { resourceType: string };
 export type WithId<TResource> = TResource & { id: string };
 
@@ -66,6 +67,7 @@ export default function useScratchpadResource<
   const connector = useSMARTWebMessagingContext();
   const [resourceType, setResourceType] = useState<string | null>(null);
   const [resourceId, setResourceId] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>(connector.status);
   const location =
     resourceType && resourceId ? `${resourceType}/${resourceId}` : null;
 
@@ -120,7 +122,6 @@ export default function useScratchpadResource<
           if (payload.outcome) {
             throw payload.outcome;
           } else {
-            jav;
             return payload.resource;
           }
         }),
@@ -134,7 +135,7 @@ export default function useScratchpadResource<
       throw new Error(
         "Cannot initialize Scratchpad. No SMARTWebMessagingConnector found",
       );
-    connector.ensureInitialized().then(async () => {
+    connector.ensureInitialized(setStatus).then(async () => {
       const initialResource =
         typeof initialResourceRef.current === "function"
           ? initialResourceRef.current()
@@ -157,5 +158,9 @@ export default function useScratchpadResource<
     },
     [create, update, resourceId],
   );
-  return [retriever.data, setResource] as const;
+  return {
+    resource: retriever.data,
+    setResource,
+    status,
+  } as const;
 }

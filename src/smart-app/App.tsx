@@ -13,7 +13,7 @@ function App() {
     editorRef.current = editor;
   };
 
-  const [resource, setResource] = useScratchpad(INITIAL_RESOURCE);
+  const { resource, setResource, status } = useScratchpad(INITIAL_RESOURCE);
 
   const handleSend = useCallback(() => {
     const jsonData = editorRef.current?.getValue();
@@ -33,6 +33,7 @@ function App() {
           <button type="button" onClick={handleSend}>
             Send
           </button>
+          <strong>{status}</strong>
         </div>
         <Editor
           height="90vh"
