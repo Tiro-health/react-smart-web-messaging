@@ -66,7 +66,7 @@ export class SMARTWebMessagingConnector {
   private _pendingHandshake: Promise<unknown> | null;
   public readonly options: Options;
   public readonly params: SMARTMessagingParams;
-  public readonly window: Window | WebView;
+  public readonly ehrWindow: Window | WebView;
 
   /**
    * Creates a new SMART Web Messaging connector instance
@@ -84,9 +84,8 @@ export class SMARTWebMessagingConnector {
     console.debug(
       `Creating connector with handle='${params.handle}' for origin='${params.origin}'`,
     );
-    window.addEventListener("message", console.log);
     this.params = params;
-    this.window = window;
+    this.ehrWindow = window;
     this.options = options;
     if (options.autoInitialize) {
       this.connectWithRetry();
@@ -171,11 +170,11 @@ export class SMARTWebMessagingConnector {
         if (response.responseToMessageId === messageId) {
           resolve(response);
           if (!response.additionalResponseExpected)
-            this.window.removeEventListener("message", resonseHandler);
+            this.ehrWindow.removeEventListener("message", resonseHandler);
         }
       };
-      this.window.postMessage(message, this.params.origin);
-      this.window.addEventListener("message", resonseHandler);
+      window.addEventListener("message", resonseHandler);
+      this.ehrWindow.postMessage(message, this.params.origin);
     });
   }
 
