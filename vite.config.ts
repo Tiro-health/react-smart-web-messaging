@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: "/react-smart-web-messaging",
   build: {
     rollupOptions: {
       input: {
