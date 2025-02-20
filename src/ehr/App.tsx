@@ -22,11 +22,11 @@ function App() {
   );
 
   useEffect(() => {
+    console.debug("Loading EHR host.");
     const callback = (event: MessageEvent) => {
       if (event.origin !== appOrigin) {
         return; // Ignore unknown origins.
       }
-
       // Verify the provided messaging handle is valid.
       if (!messagingHandleIsValid(event.data.messagingHandle)) {
         return; // Or handle the error some other way.

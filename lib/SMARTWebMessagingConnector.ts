@@ -1,15 +1,25 @@
 import { WebView } from "./webview2";
 
+/**
+ * Options for configuring the SMART Web Messaging connector
+ */
 type Options = {
   autoInitialize?: boolean;
   timeoutMs: number;
+  maxRetries: number;
 };
 
+/**
+ * Parameters required for SMART Web Messaging
+ */
 type SMARTMessagingParams = {
   origin: string;
   handle: string;
 };
 
+/**
+ * Structure of an outgoing request message
+ */
 type RequestMessage = {
   messagingHandle: string;
   messageId: string;
@@ -17,6 +27,9 @@ type RequestMessage = {
   payload: Record<string, unknown>;
 };
 
+/**
+ * Structure of an incoming response message
+ */
 type ResponseMessage = {
   messageId: string;
   responseToMessageId: string;
@@ -24,6 +37,9 @@ type ResponseMessage = {
   payload: Record<string, unknown>;
 };
 
+/**
+ * Wraps a promise with a timeout that rejects if the operation takes too long
+ */
 function withTimeout<T>(promise: Promise<T>, ms: number) {
   const timeout = new Promise<T>((_, reject) =>
     setTimeout(
@@ -34,43 +50,107 @@ function withTimeout<T>(promise: Promise<T>, ms: number) {
   return Promise.race([promise, timeout]);
 }
 
-export type Status = "connecting" | "ready" | "disconnected" | "error";
+/**
+ * Possible connection states for the messaging connector
+ */
+export type Status = "connecting" | "connected" | "disconnected" | "error";
 
+/**
+ * Handles SMART Web Messaging communication between windows/frames
+ */
 export class SMARTWebMessagingConnector {
-  private _isInitialized: boolean;
   private _status: Status;
-  public readonly timeoutMs: number;
+  private _listeners: {
+    statusChange: Set<(status: Status) => void>;
+  };
+  private _pendingHandshake: Promise<unknown> | null;
+  public readonly options: Options;
   public readonly params: SMARTMessagingParams;
   public readonly window: Window | WebView;
+
+  /**
+   * Creates a new SMART Web Messaging connector instance
+   */
   constructor(
     window: Window,
     params: SMARTMessagingParams,
-    options: Options = { timeoutMs: 500 },
+    options: Options = { timeoutMs: 500, maxRetries: 3 },
   ) {
-    this._isInitialized = false;
     this._status = "disconnected";
+    this._listeners = {
+      statusChange: new Set(),
+    };
+    this._pendingHandshake = null;
     console.debug(
       `Creating connector with handle='${params.handle}' for origin='${params.origin}'`,
     );
+    window.addEventListener("message", console.log);
     this.params = params;
     this.window = window;
-    this.timeoutMs = options.timeoutMs;
+    this.options = options;
     if (options.autoInitialize) {
-      this.initialize();
+      this.connectWithRetry();
     }
   }
-  get isInitialized() {
-    return this._isInitialized;
+
+  /**
+   * Checks if connection is in 'connected' state
+   */
+  get isConnectionReady() {
+    return this.status == "connected";
   }
+
+  /**
+   * Generates a random message ID
+   */
   static generateMessageId() {
     return Math.random().toString(36).substring(2, 15);
   }
-  public async ensureInitialized(onStatusChange?: (status: Status) => void) {
+
+  /**
+   * Ensures connection is initialized before proceeding
+   */
+  public async ensureConnection() {
     console.debug("Ensure connection is established.");
-    if (!this._isInitialized) {
-      await this.initialize(onStatusChange);
+    if (this.status != "connected") {
+      await this.connectWithRetry();
+    }
+    if (this.status == "error") {
+      throw new Error("Connection error");
     }
   }
+
+  /**
+   * Adds a status change event listener
+   */
+  public addEventListener(
+    type: "statusChange",
+    listener: (status: Status) => void,
+  ) {
+    this._listeners[type].add(listener);
+  }
+
+  /**
+   * Removes a status change event listener
+   */
+  public removeEventListener(
+    type: "statusChange",
+    listener: (status: Status) => void,
+  ) {
+    return this._listeners[type].delete(listener);
+  }
+
+  /**
+   * Updates connection status and notifies listeners
+   */
+  private setStatus(status: Status) {
+    this._status = status;
+    this._listeners["statusChange"].forEach((listener) => listener(status));
+  }
+
+  /**
+   * Sends a message and waits for response
+   */
   public async sendMessage<
     TRequestMessage extends Pick<RequestMessage, "messageType" | "payload">,
     TResponseMessage extends Pick<ResponseMessage, "payload">,
@@ -98,27 +178,56 @@ export class SMARTWebMessagingConnector {
       this.window.addEventListener("message", resonseHandler);
     });
   }
-  async initialize(onStatusChange?: (status: Status) => void) {
-    if (this._status == "connecting") return;
-    console.debug("Establishing connection.");
-    this._status = "connecting";
-    onStatusChange?.(this._status);
-    try {
-      await withTimeout(this.sendMessage("status.handshake"), this.timeoutMs);
-    } catch {
-      this._status = "error";
-      onStatusChange?.(this._status);
-      console.debug("Connection failed");
-      return;
+
+  async connect() {
+    if (this.status == "connecting" && this._pendingHandshake) {
+      return await this._pendingHandshake;
     }
-    this._status = "ready";
-    onStatusChange?.(this._status);
-    this._isInitialized = true;
-    console.debug("Connection established.");
+    console.debug("Establishing connection.");
+    this.setStatus("connecting");
+    this._pendingHandshake = withTimeout(
+      this.sendMessage("status.handshake"),
+      this.options.timeoutMs,
+    )
+      .then(() => {
+        this.setStatus("connected");
+        console.debug("Connection established.");
+      })
+      .catch((reason) => {
+        if (this.status !== "connecting") return;
+        this.setStatus("error");
+        throw reason;
+      });
+    await this._pendingHandshake;
   }
+
+  async connectWithRetry() {
+    let retries = 0;
+    while (retries < this.options.maxRetries) {
+      console.debug(`Attempt ${retries + 1} to connect`);
+      try {
+        await this.connect();
+        return;
+      } catch (error) {
+        console.warn("Failed to initialize connection:", error);
+      }
+      retries++;
+    }
+    throw new Error(
+      `Failed to establish connection after ${this.options.maxRetries} retries`,
+    );
+  }
+
+  /**
+   * Returns current connection status
+   */
   get status() {
     return this._status;
   }
+
+  /**
+   * Closes the messaging connection
+   */
   close() {
     this.sendMessage("ui.close");
   }

@@ -6,6 +6,12 @@ import { Status } from "./SMARTWebMessagingConnector";
 export type Resource = Record<string, unknown> & { resourceType: string };
 export type WithId<TResource> = TResource & { id: string };
 
+function getResource<T extends Resource>(
+  value: T | (() => T) | null,
+): T | null {
+  return typeof value === "function" ? value() : value!;
+}
+
 export type ScratchpadCreate = {
   Request: {
     messageType: "scratchpad.create";
@@ -105,10 +111,7 @@ export default function useScratchpadResource<
   });
 
   const retriever = useQuery({
-    initialData:
-      typeof initialResource == "function"
-        ? initialResource()
-        : initialResource,
+    initialData: getResource(initialResource),
     queryKey: ["scratchpad.read", location],
     queryFn: () =>
       connector
@@ -135,16 +138,17 @@ export default function useScratchpadResource<
       throw new Error(
         "Cannot initialize Scratchpad. No SMARTWebMessagingConnector found",
       );
-    connector.ensureInitialized(setStatus).then(async () => {
-      const initialResource =
-        typeof initialResourceRef.current === "function"
-          ? initialResourceRef.current()
-          : initialResourceRef.current;
+    connector.addEventListener("statusChange", setStatus);
+    connector.ensureConnection().then(async () => {
+      const initialResource = getResource(initialResourceRef.current);
       if (initialResource !== null) {
         // Create a new resource in scratchpad
         await createAsync(initialResource);
       }
     });
+    return () => {
+      connector.removeEventListener("statusChange", setStatus);
+    };
   }, [createAsync, connector]);
 
   const setResource = useCallback(
