@@ -41,12 +41,10 @@ jobs:
           cache: "pnpm"
       - name: Install dependencies package
         run: pnpm install
-      - name: Install dependencies demo
+      - name: Install dependencies
         run: pnpm install
-        working-directory: demo
       - name: Build project
         run: pnpm build
-        working-directory: demo
       - name: Upload production-ready build files
         uses: actions/upload-pages-artifact@v3
         with:
