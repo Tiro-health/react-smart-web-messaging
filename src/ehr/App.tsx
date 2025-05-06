@@ -5,15 +5,18 @@ import "./App.css";
 function App() {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [messagingHandle, setMessagingHandle] = useState("test");
-  const [appOrigin, setAppOrigin] = useState<string>(window.location.origin);
-
-  const launchparams = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("messagingHandle", messagingHandle);
-    params.set("targetOrigin", appOrigin);
-    return params;
-  }, [appOrigin, messagingHandle]);
+  const [ehrOrigin, setEhrOrigin] = useState(window.location.origin);
+  const [appUrl, setAppUrl] = useState<URL>(
+    new URL("app.html", window.location.origin),
+  );
   const [resource, setResource] = useState(null);
+
+  const iframeSrc = useMemo(() => {
+    const params = appUrl.searchParams;
+    params.set("messagingHandle", messagingHandle);
+    params.set("targetOrigin", ehrOrigin);
+    return appUrl.href;
+  }, [ehrOrigin, appUrl, messagingHandle]);
 
   const messagingHandleIsValid = useCallback(
     (handle: string) => {
@@ -25,7 +28,7 @@ function App() {
   useEffect(() => {
     console.debug("Loading EHR host.");
     const callback = (event: MessageEvent) => {
-      if (event.origin !== appOrigin) {
+      if (event.origin !== appUrl.origin) {
         return; // Ignore unknown origins.
       }
       // Verify the provided messaging handle is valid.
@@ -63,7 +66,7 @@ function App() {
     return () => {
       window.removeEventListener("message", callback);
     };
-  }, [appOrigin, messagingHandleIsValid]);
+  }, [appUrl, messagingHandleIsValid]);
 
   return (
     <>
@@ -75,7 +78,8 @@ function App() {
             onSubmit={(event) => {
               const formData = new FormData(event.currentTarget);
               setMessagingHandle(formData.get("messagingHandle") as string);
-              setAppOrigin(formData.get("appOrigin") as string);
+              setAppUrl(new URL(formData.get("appUrl") as string));
+              setEhrOrigin(formData.get("ehrOrigin") as string);
               event.preventDefault();
             }}
           >
@@ -98,23 +102,25 @@ function App() {
                   name="ehrOrigin"
                   className="border border-gray-400 rounded-sm ml-2 text-sm px-1 py-0.5"
                   defaultValue={window.location.origin}
+                  size={100}
                 />
               </label>
             </div>
             <div>
               <label className="text-xs">
-                App Origin
+                App URL
                 <input
                   type="text"
-                  name="appOrigin"
+                  name="appUrl"
                   className="border border-gray-400 rounded-sm ml-2 text-sm px-1 py-0.5"
-                  defaultValue={appOrigin}
+                  defaultValue={appUrl.href}
+                  size={100}
                 />
               </label>
             </div>
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-2.5 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              className="rounded-md bg-indigo-600 px-2.5 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
             >
               submit
             </button>
@@ -125,7 +131,7 @@ function App() {
         </div>
       </div>
       <div className="app panel">
-        <iframe ref={frameRef} src={`app.html?${launchparams}`}></iframe>
+        <iframe ref={frameRef} src={iframeSrc}></iframe>
       </div>
     </>
   );
